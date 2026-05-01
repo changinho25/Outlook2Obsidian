@@ -7,477 +7,123 @@ Option Explicit
 Private Declare PtrSafe Function ShellExecute Lib "shell32.dll" Alias "ShellExecuteA" ( _
     ByVal hwnd As LongPtr, ByVal lpOperation As String, ByVal lpFile As String, _
     ByVal lpParameters As String, ByVal lpDirectory As String, ByVal nShowCmd As Long) As Long
+
+' ==================================================================================================
 Sub ExtractEmail_MarkDown()
 
-    ' Dim ObsidianFolder As String
-    ' Dim baseFolder As String
     Dim vaultPathToSaveFileTo As String
     Dim emailFileNameStartChr As String
     Dim emailTypeLink As String
     Dim personNameStartChar As String
-    Dim optionValue As Integer
-    Dim mailItem As Outlook.mailItem
-    Dim htmlContent As String
-    Dim processedHtml As String
-        
+
     config vaultPathToSaveFileTo, personNameStartChar, emailFileNameStartChr, emailTypeLink
 
-    '================================================'
-    ' Save as plain text
-    Const OLTXT = 0
-    ' Object holding variable
     Dim obj As Object
-    ' Instantiate an Outlook Email Object
     Dim oMail As Outlook.mailItem
-    ' If something breaks, skip to the end, tidy up and shut the door
     On Error GoTo EndClean:
-    
-    ' Establish the environment and selected items (emails)
-    ' NOTE: selecting a conversation-view stack wont work
-    '       you'll need to select one of the emails
+
     Dim fileName As String, mName As String
     Dim temporarySubjectLineString As String
     Dim currentExplorer As Explorer
         Set currentExplorer = Application.ActiveExplorer
     Dim Selection As Selection
         Set Selection = currentExplorer.Selection
-    ' For each email in the Selection
-    ' Assigning email item to the `obj` holding variable
+
     For Each obj In Selection
-        ' set the oMail object equal to that mail item
         Set oMail = obj
-        ' Is it an Email?
         If oMail.Class <> 43 Then
-          MsgBox "This code only works with Emails."
-          GoTo EndClean: ' you broke it
+            MsgBox "This code only works with Emails."
+            GoTo EndClean:
         End If
 
-        ' Yank the mail items subject line to `temporarySubjectLineString`
         temporarySubjectLineString = oMail.subject
-        ' function call the name cleaner to remove any
-        '    illegal characters from the subject line
         ReplaceCharsForFileName temporarySubjectLineString, ""
-        ' Yank the received date-time to a holding variable
 
-        ' Build Recipient string based on receipient collection
-        Dim recips As Outlook.Recipients
-            Set recips = oMail.Recipients
-        Dim recip As Outlook.Recipient
-        Dim result As String
-        Dim recipString As String
-            recipString = ""
+        Dim dtDate As Date
+            dtDate = oMail.ReceivedTime
+        mName = Format(dtDate, "yyyymmdd", vbUseSystemDayOfWeek, vbUseSystem) & " " & temporarySubjectLineString
 
-        For Each recip In recips
-            recipString = recipString & vbTab
-            recipString = recipString & "- "
-            recipString = recipString & formatName(recip.Name, personNameStartChar)
-            recipString = recipString & vbCrLf
-        Next
-        
-        ' ===============================================================
-        
-        ' (1) ¾Æ¿ô·è ÆÄÀÏ htmlÀ¸·Î ÀúÀå
+        ' Create per-email subfolder inside attachments
+        Dim mailFolder As String
+        mailFolder = vaultPathToSaveFileTo & mName & "\"
+        If Not CreateObject("Scripting.FileSystemObject").FolderExists(mailFolder) Then
+            MkDir mailFolder
+        End If
+
+        ' (1) Save HTML (includes inline images in .files subfolder)
         Dim objItem As mailItem, htmlpath As String
         Set objItem = Application.ActiveExplorer.Selection(1)
-        htmlpath = vaultPathToSaveFileTo & temporarySubjectLineString & ".html"
-        ' Debug.Print htmlpath
+        htmlpath = mailFolder & mName & ".html"
         objItem.SaveAs htmlpath, 5
-        
-        
-        ' (2) Ã·ºÎÆÄÀÏ ÀúÀå
+
+        ' (2) Save attachments
         Dim attachments As Outlook.attachments
         Dim Attachment As Outlook.Attachment
         Set attachments = objItem.attachments
         Dim i As Long
         For i = 1 To attachments.Count
             Set Attachment = attachments(i)
-            Dim attachFileName As String
-            attachFileName = vaultPathToSaveFileTo & temporarySubjectLineString & ".files\" & Attachment.fileName
-            Attachment.SaveAsFile attachFileName
+            Attachment.SaveAsFile mailFolder & Attachment.fileName
         Next i
-        
-        
-        ' Build the result file content to be sent to the mail item body
-        ' Then save that mail item same as the meeting extractor
+
+        ' (3) Build YAML frontmatter
         Dim sender As String
             sender = formatName(oMail.sender, personNameStartChar)
-        Dim dtDate As Date
-            dtDate = oMail.ReceivedTime
         Dim resultString As String
 
-        ' resultString = ""
-        ' resultString = resultString & "# [[" & emailFileNameStartChr & Format(oMail.ReceivedTime, "yyyy-mm-dd hhnn") & " " & temporarySubjectLineString & "|" & temporarySubjectLineString & "]]"
-        ' resultString = resultString & vbCrLf & vbCrLf & vbCrLf
-        
-        ' (3) ÇÁ·ÎÆÛÆ¼ Ç¥½Ã(YAML frontmatter)
-        ' ----------------------------------------------- Properties star -----------------------------------------------------------
         resultString = "---" & vbCrLf
-        
-        ' Add tags
-        resultString = resultString & "tags:  " & """SOURCE/MAIL today""" & vbCrLf
-        resultString = resultString & "Index: " & vbCrLf
+        resultString = resultString & "tags:" & vbCrLf
+        resultString = resultString & "  - SOURCE/MAIL" & vbCrLf
         resultString = resultString & "title: """ & temporarySubjectLineString & """" & vbCrLf
-        resultString = resultString & "aliases:" & vbCrLf
-        resultString = resultString & "create: " & Format(Now, "yyyy-MM-dd HH:mm") & vbCrLf
-        resultString = resultString & "¼ö½ÅÀÏ½Ã: " & Format(oMail.SentOn, "yyyy-MM-dd HH:mm") & vbCrLf
-        resultString = resultString & "¿äÃ»ÀÏÀÚ: " & Format(oMail.SentOn, "yyyy-MM-dd") & vbCrLf
-        resultString = resultString & "¿äÃ»ÀÚ: """ & sender & """" & vbCrLf
-        resultString = resultString & "ÁøÇà»óÅÂ: " & "´ë±â" & vbCrLf
-        resultString = resultString & "D-day: """ & vbCrLf
-        resultString = resultString & "¿Ï·áÀÏ: """ & vbCrLf
-        resultString = resultString & "ITSM: """ & vbCrLf
-        resultString = resultString & "ITSM_URL: """ & vbCrLf
-        
-        ' Convert recipients to YAML list
-        ' resultString = resultString & "to:" & vbCrLf
-        ' For Each recip In recips
-        '     resultString = resultString & "  - """ & formatName(recip.Name, personNameStartChar) & """" & vbCrLf
-        ' Next
+        resultString = resultString & "date: " & Format(oMail.SentOn, "yyyy-MM-dd") & vbCrLf
+        resultString = resultString & "from: """ & sender & """" & vbCrLf
+        resultString = resultString & "ITSM: """""  & vbCrLf
+        resultString = resultString & "ITSM_URL: """""  & vbCrLf
+        resultString = resultString & "---" & vbCrLf & vbCrLf
 
-        ' End YAML block
-        resultString = resultString & "---" & vbCrLf
-        ' ----------------------------------------------- Properties end ------------------------------------------------------------
-        
-        ' Now we create the file name
-        ' mName = emailFileNameStartChr
-        mName = mName & Format(dtDate, "yyyymmdd", vbUseSystemDayOfWeek, vbUseSystem)
-        ' mName = mName & Format(dtDate, " hhMM", vbUseSystemDayOfWeek, vbUseSystem)
-        mName = mName & " " & temporarySubjectLineString
- 
- 
-        ' (4) Ã·ºÎÆÄÀÏ Ç¥½Ã
+        ' (4) HTML embed â€” right below YAML for quick preview
+        resultString = resultString & Replace("![[" & baseFolder & mName & "/" & mName & ".html]]", "\", "/") & vbCrLf & vbCrLf
+
+        ' (5) Visible attachment links
         Dim propertyAccessor As Outlook.propertyAccessor
         Dim propHidden As String
         Dim isHidden As Variant
         propHidden = "http://schemas.microsoft.com/mapi/proptag/0x7FFE000B"
         For i = 1 To attachments.Count
-            Dim fNm As String
-            Dim fLnk As String
-            Dim fLst As String
-       
             Set Attachment = attachments(i)
             Set propertyAccessor = Attachment.propertyAccessor
             isHidden = propertyAccessor.GetProperty(propHidden)
-       
-            ' PR_ATTACHMENT_HIDDEN ¼Ó¼ºÀÌ TrueÀÎ °æ¿ì¿¡¸¸ º¸¿©ÁÜ
             If Not isHidden Then
-            fNm = Attachment.fileName
-                fLnk = Replace("![[" & baseFolder & temporarySubjectLineString & ".files\" & fNm & "]]", "\", "/")
-                resultString = resultString & fLnk & vbCrLf
+                resultString = resultString & Replace("![[" & baseFolder & mName & "/" & Attachment.fileName & "]]", "\", "/") & vbCrLf
             End If
         Next i
-        
-        
-        ' Add a horizontal rule for separation
-        resultString = resultString & vbCrLf & "---" & vbCrLf
-        
-        
-        ' (5) ¸ÞÀÏ º»¹® Ç¥½Ã
-        ' ------------------------------------------------- Body Start --------------------------------------------------------------
-        ' (6) ¼Ò½º Ç¥½Ã
-        resultString = resultString & "![[" & temporarySubjectLineString & ".html]]" & vbCrLf
-        resultString = resultString & "[[" & mName & "]]" & vbCrLf
-        
-        ' (7) ¿µ¿ª Æ÷½Ã
-        resultString = resultString & "# Note" & vbCrLf & vbCrLf & vbCrLf & vbCrLf
-        resultString = resultString & "# Email" & vbCrLf
-                
-        ' html °¡Á®¿À±â
+
+        ' (6) Convert HTML to Markdown for inline viewing
+        Dim htmlContent As String
         htmlContent = ReadFileContent(htmlpath)
-        processedHtml = htmlContent
-        
-        
-        ' Ç¥½Ã ¿É¼Ç¿¡ µû¸¥ ºÐ°³ Ã³¸®
-        optionValue = 2 ' 1:html±×´ë·Î, 2:markdown ÇÁ·Î¼¼½Ì
-        Select Case optionValue
-            Case 1
-                ' html ±×´ë·Î Ãâ·Â
-                
-            Case 2
-                ' ÁÖ¼®,ÅÂ±× Á¤¸®, table º¯È¯
-                processedHtml = ConvertHTMLToMarkdown(processedHtml, temporarySubjectLineString)
-                
-                ' ## Çì´õ·Î È¸½Å¸ÞÀÏ ±¸ºÐ
-                processedHtml = InsertReplyHeading(processedHtml)
-                
-                ' ÇÏ´Ü ÀÌ¹ÌÁö, Ç¥ ÀÌ»ó °³¼±
-                
-            Case Else
-                ' html ±×´ë·Î Ãâ·Â
-        End Select
-        
-        ' (8) ¸ÞÀÏ Ç¥½Ã
-        resultString = resultString & processedHtml
-        
-        ' ------------------------------------------------- Body End ----------------------------------------------------------------
 
-        
-        ' ===============================================================
-        
-        ' Make a dummy email to hold the details we're saving
-        ' This way we dont get junk in the message header when saving
-        Dim outputItem As mailItem
-        Set outputItem = Application.CreateItem(olMailItem)
-        outputItem.body = resultString
+        Dim mdBody As String
+        mdBody = ConvertHTMLToMarkdown(htmlContent, mName)
 
+        resultString = resultString & vbCrLf & "---" & vbCrLf & vbCrLf
+        resultString = resultString & mdBody & vbCrLf
+
+        ' Save .md file
         fileName = mName & ".md"
-
-        Debug.Print ObsidianFolder
-
-        ' Save the result
         SaveAsUTF8 ObsidianFolder & fileName, resultString
 
-        ' Fully encode the file path for Obsidian URI
+        ' Open in Obsidian
         Dim obsidianURI As String
         obsidianURI = "obsidian://open?path=" & UrlEncodeUtf8NoBom(ObsidianFolder & fileName)
-
-        ' Use ShellExecute to open the note in Obsidian
         ShellExecute 0, "open", obsidianURI, vbNullString, vbNullString, 1
-
 
     Next
 EndClean:
     Set obj = Nothing
     Set oMail = Nothing
-    Set outputItem = Nothing
 End Sub
-
 
 ' ==================================================================================================
 Sub ExtractEmail_html()
-
-    ' Dim ObsidianFolder As String
-    ' Dim baseFolder As String
-    Dim vaultPathToSaveFileTo As String
-    Dim emailFileNameStartChr As String
-    Dim emailTypeLink As String
-    Dim personNameStartChar As String
-    Dim optionValue As Integer
-    Dim mailItem As Outlook.mailItem
-    Dim htmlContent As String
-    Dim processedHtml As String
-        
-    config vaultPathToSaveFileTo, personNameStartChar, emailFileNameStartChr, emailTypeLink
-
-    '================================================'
-    ' Save as plain text
-    Const OLTXT = 0
-    ' Object holding variable
-    Dim obj As Object
-    ' Instantiate an Outlook Email Object
-    Dim oMail As Outlook.mailItem
-    ' If something breaks, skip to the end, tidy up and shut the door
-    On Error GoTo EndClean:
-    
-    ' Establish the environment and selected items (emails)
-    ' NOTE: selecting a conversation-view stack wont work
-    '       you'll need to select one of the emails
-    Dim fileName As String, mName As String
-    Dim temporarySubjectLineString As String
-    Dim currentExplorer As Explorer
-        Set currentExplorer = Application.ActiveExplorer
-    Dim Selection As Selection
-        Set Selection = currentExplorer.Selection
-    ' For each email in the Selection
-    ' Assigning email item to the `obj` holding variable
-    For Each obj In Selection
-        ' set the oMail object equal to that mail item
-        Set oMail = obj
-        ' Is it an Email?
-        If oMail.Class <> 43 Then
-          MsgBox "This code only works with Emails."
-          GoTo EndClean: ' you broke it
-        End If
-
-        ' Yank the mail items subject line to `temporarySubjectLineString`
-        temporarySubjectLineString = oMail.subject
-        ' function call the name cleaner to remove any
-        '    illegal characters from the subject line
-        ReplaceCharsForFileName temporarySubjectLineString, ""
-        ' Yank the received date-time to a holding variable
-
-        ' Build Recipient string based on receipient collection
-        Dim recips As Outlook.Recipients
-            Set recips = oMail.Recipients
-        Dim recip As Outlook.Recipient
-        Dim result As String
-        Dim recipString As String
-            recipString = ""
-
-        For Each recip In recips
-            recipString = recipString & vbTab
-            recipString = recipString & "- "
-            recipString = recipString & formatName(recip.Name, personNameStartChar)
-            recipString = recipString & vbCrLf
-        Next
-        
-        ' ===============================================================
-        
-        ' (1) ¾Æ¿ô·è ÆÄÀÏ htmlÀ¸·Î ÀúÀå
-        Dim objItem As mailItem, htmlpath As String
-        Set objItem = Application.ActiveExplorer.Selection(1)
-        htmlpath = vaultPathToSaveFileTo & temporarySubjectLineString & ".html"
-        ' Debug.Print htmlpath
-        objItem.SaveAs htmlpath, 5
-        
-        
-        ' (2) Ã·ºÎÆÄÀÏ ÀúÀå
-        Dim attachments As Outlook.attachments
-        Dim Attachment As Outlook.Attachment
-        Set attachments = objItem.attachments
-        Dim i As Long
-        For i = 1 To attachments.Count
-            Set Attachment = attachments(i)
-            Dim attachFileName As String
-            attachFileName = vaultPathToSaveFileTo & temporarySubjectLineString & ".files\" & Attachment.fileName
-            Attachment.SaveAsFile attachFileName
-        Next i
-        
-        
-        ' Build the result file content to be sent to the mail item body
-        ' Then save that mail item same as the meeting extractor
-        Dim sender As String
-            sender = formatName(oMail.sender, personNameStartChar)
-        Dim dtDate As Date
-            dtDate = oMail.ReceivedTime
-        Dim resultString As String
-
-        ' resultString = ""
-        ' resultString = resultString & "# [[" & emailFileNameStartChr & Format(oMail.ReceivedTime, "yyyy-mm-dd hhnn") & " " & temporarySubjectLineString & "|" & temporarySubjectLineString & "]]"
-        ' resultString = resultString & vbCrLf & vbCrLf & vbCrLf
-        
-        ' (3) ÇÁ·ÎÆÛÆ¼ Ç¥½Ã(YAML frontmatter)
-        ' ----------------------------------------------- Properties star -----------------------------------------------------------
-        resultString = "---" & vbCrLf
-        
-        ' Add tags
-        resultString = resultString & "tags:" & vbCrLf
-        
-        ' Add classification and optional properties
-        resultString = resultString & "tags:  " & """SOURCE/MAIL today""" & vbCrLf
-        resultString = resultString & "Index: " & vbCrLf
-        resultString = resultString & "title: """ & temporarySubjectLineString & """" & vbCrLf
-        resultString = resultString & "aliases:" & vbCrLf
-        resultString = resultString & "create: " & Format(Now, "yyyy-MM-dd HH:mm") & vbCrLf
-        resultString = resultString & "¼ö½ÅÀÏ½Ã: " & Format(oMail.SentOn, "yyyy-MM-dd HH:mm") & vbCrLf
-        resultString = resultString & "¿äÃ»ÀÏÀÚ: " & Format(oMail.SentOn, "yyyy-MM-dd") & vbCrLf
-        resultString = resultString & "¿äÃ»ÀÚ: """ & sender & """" & vbCrLf
-        resultString = resultString & "ÁøÇà»óÅÂ: " & "´ë±â" & vbCrLf
-        resultString = resultString & "D-day: """"" & vbCrLf
-        resultString = resultString & "¿Ï·áÀÏ: """"" & vbCrLf
-        resultString = resultString & "ITSM: """"" & vbCrLf
-        resultString = resultString & "ITSM_URL: """"" & vbCrLf
-        ' Convert recipients to YAML list
-        ' resultString = resultString & "to:" & vbCrLf
-        ' For Each recip In recips
-        '     resultString = resultString & "  - """ & formatName(recip.Name, personNameStartChar) & """" & vbCrLf
-        ' Next
-
-        ' End YAML block
-        resultString = resultString & "---" & vbCrLf
-        ' ----------------------------------------------- Properties end ------------------------------------------------------------
-        
-        ' Now we create the file name
-        ' mName = emailFileNameStartChr
-        mName = mName & Format(dtDate, "yyyymmdd", vbUseSystemDayOfWeek, vbUseSystem)
-        ' mName = mName & Format(dtDate, " hhMM", vbUseSystemDayOfWeek, vbUseSystem)
-        mName = mName & " " & temporarySubjectLineString
- 
- 
-        ' (4) Ã·ºÎÆÄÀÏ Ç¥½Ã
-        Dim propertyAccessor As Outlook.propertyAccessor
-        Dim propHidden As String
-        Dim isHidden As Variant
-        propHidden = "http://schemas.microsoft.com/mapi/proptag/0x7FFE000B"
-        For i = 1 To attachments.Count
-            Dim fNm As String
-            Dim fLnk As String
-            Dim fLst As String
-       
-            Set Attachment = attachments(i)
-            Set propertyAccessor = Attachment.propertyAccessor
-            isHidden = propertyAccessor.GetProperty(propHidden)
-       
-            ' PR_ATTACHMENT_HIDDEN ¼Ó¼ºÀÌ TrueÀÎ °æ¿ì¿¡¸¸ º¸¿©ÁÜ
-            If Not isHidden Then
-            fNm = Attachment.fileName
-                fLnk = Replace("![[" & baseFolder & temporarySubjectLineString & ".files\" & fNm & "]]", "\", "/")
-                resultString = resultString & fLnk & vbCrLf
-            End If
-        Next i
-        
-        
-        ' Add a horizontal rule for separation
-        resultString = resultString & vbCrLf & "---" & vbCrLf
-        
-        
-        ' (5) ¸ÞÀÏ º»¹® Ç¥½Ã
-        ' ------------------------------------------------- Body Start --------------------------------------------------------------
-        ' (6) ¼Ò½º Ç¥½Ã
-        resultString = resultString & "![[" & temporarySubjectLineString & ".html]]" & vbCrLf
-        resultString = resultString & "[[" & mName & "]]" & vbCrLf
-        
-        ' (7) ¿µ¿ª Æ÷½Ã
-        resultString = resultString & "# Note" & vbCrLf & vbCrLf & vbCrLf & vbCrLf
-        resultString = resultString & "# Email" & vbCrLf
-                
-        ' html °¡Á®¿À±â
-        htmlContent = ReadFileContent(htmlpath)
-        processedHtml = htmlContent
-        
-        
-        ' Ç¥½Ã ¿É¼Ç¿¡ µû¸¥ ºÐ°³ Ã³¸®
-        optionValue = 1 ' 1:html±×´ë·Î, 2:markdown ÇÁ·Î¼¼½Ì
-        Select Case optionValue
-            Case 1
-                ' html ±×´ë·Î Ãâ·Â
-                
-            Case 2
-                ' ÁÖ¼®,ÅÂ±× Á¤¸®, table º¯È¯
-                processedHtml = ConvertHTMLToMarkdown(processedHtml, temporarySubjectLineString)
-                
-                ' ## Çì´õ·Î È¸½Å¸ÞÀÏ ±¸ºÐ
-                processedHtml = InsertReplyHeading(processedHtml)
-                
-                ' ÇÏ´Ü ÀÌ¹ÌÁö, Ç¥ ÀÌ»ó °³¼±
-                
-            Case Else
-                ' html ±×´ë·Î Ãâ·Â
-        End Select
-        
-        ' (8) ¸ÞÀÏ Ç¥½Ã
-        resultString = resultString & processedHtml
-        
-        ' ------------------------------------------------- Body End ----------------------------------------------------------------
-
-        
-        ' ===============================================================
-        
-        ' Make a dummy email to hold the details we're saving
-        ' This way we dont get junk in the message header when saving
-        Dim outputItem As mailItem
-        Set outputItem = Application.CreateItem(olMailItem)
-        outputItem.body = resultString
-
-        fileName = mName & ".md"
-
-        Debug.Print ObsidianFolder
-
-        ' Save the result
-        SaveAsUTF8 ObsidianFolder & fileName, resultString
-
-        ' Fully encode the file path for Obsidian URI
-        Dim obsidianURI As String
-        obsidianURI = "obsidian://open?path=" & UrlEncodeUtf8NoBom(ObsidianFolder & fileName)
-
-        ' Use ShellExecute to open the note in Obsidian
-        ShellExecute 0, "open", obsidianURI, vbNullString, vbNullString, 1
-
-
-    Next
-EndClean:
-    Set obj = Nothing
-    Set oMail = Nothing
-    Set outputItem = Nothing
+    ExtractEmail_MarkDown
 End Sub
-

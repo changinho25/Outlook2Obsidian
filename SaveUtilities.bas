@@ -2,91 +2,54 @@ Attribute VB_Name = "SaveUtilities"
 Option Explicit
 '======================================================================================='
 Public Function GetCurrentItem() As Object
-    ' Instantiate an Outlook application instance
     Dim objApp As Outlook.Application
         Set objApp = Application
-
-    ' Don't nuke the process if something breaks
     On Error Resume Next
-
-    ' Depending on Which type of active window is active in Outlook
     Select Case TypeName(objApp.ActiveWindow)
         Case "Explorer"
-            ' If explorer than grab the current active selection
             Set GetCurrentItem = objApp.ActiveExplorer.Selection.item(1)
         Case "Inspector"
-            ' If Inspector than grab the current item
             Set GetCurrentItem = objApp.ActiveInspector.CurrentItem
     End Select
-    ' Tidy up and de-allocate the Outlook instance
     Set objApp = Nothing
 End Function
 
-Function URLEncode(str As String) As String
-    Dim i As Integer
-    Dim c As String
-    Dim result As String
-    result = ""
-
-    For i = 1 To Len(str)
-        c = Mid(str, i, 1)
-        Select Case Asc(c)
-            Case 48 To 57, 65 To 90, 97 To 122, 45, 46, 95, 126
-                ' Keep alphanumeric characters and safe symbols (-, ., _, ~)
-                result = result & c
-            Case 32
-                ' Encode space as %20
-                result = result & "%20"
-            Case Else
-                ' Encode all other characters
-                result = result & "%" & Right("0" & Hex(Asc(c)), 2)
-        End Select
-    Next i
-
-    URLEncode = result
-End Function
-
+'======================================================================================='
 Public Function UrlEncodeUtf8NoBom(ByVal sText As String) As String
-    Dim oStream As Object     ' ADODB.Stream
+    Dim oStream As Object
     Dim byteArray() As Byte
     Dim i As Long
     Dim sEncoded As String
     Dim startIndex As Long
-    
-    ' --- Step 1: Write text as UTF-8 into a stream ---
+
     Set oStream = CreateObject("ADODB.Stream")
-    oStream.Type = 2            ' adTypeText
-    oStream.Mode = 3            ' adModeReadWrite
+    oStream.Type = 2
+    oStream.Mode = 3
     oStream.Charset = "UTF-8"
     oStream.Open
     oStream.WriteText sText
     oStream.Position = 0
-    oStream.Type = 1            ' Switch to binary to read raw bytes
+    oStream.Type = 1
     byteArray = oStream.Read
     oStream.Close
     Set oStream = Nothing
-    
-    ' --- Step 2: Detect & skip BOM if present (EF BB BF) ---
+
     startIndex = LBound(byteArray)
     If (UBound(byteArray) - LBound(byteArray) >= 2) Then
         If byteArray(0) = &HEF And byteArray(1) = &HBB And byteArray(2) = &HBF Then
-            startIndex = 3 ' jump past the BOM
+            startIndex = 3
         End If
     End If
-    
-    ' --- Step 3: Percent-encode each remaining byte ---
+
     For i = startIndex To UBound(byteArray)
         sEncoded = sEncoded & "%" & Right("0" & Hex(byteArray(i)), 2)
     Next i
-    
+
     UrlEncodeUtf8NoBom = sEncoded
 End Function
 
-
 '======================================================================================='
-' STRING CLEANING SUBROUTINE
 Public Sub ReplaceCharsForFileName(temporarySubjectLineString As String, sChr As String)
-    ' This just cleans the Email subject line of invalid characters
     temporarySubjectLineString = Replace(temporarySubjectLineString, "/", sChr)
     temporarySubjectLineString = Replace(temporarySubjectLineString, "\", sChr)
     temporarySubjectLineString = Replace(temporarySubjectLineString, ":", sChr)
@@ -98,56 +61,41 @@ Public Sub ReplaceCharsForFileName(temporarySubjectLineString As String, sChr As
     temporarySubjectLineString = Replace(temporarySubjectLineString, "[", sChr)
     temporarySubjectLineString = Replace(temporarySubjectLineString, "]", sChr)
 End Sub
+
 '======================================================================================='
 Public Function formatName(str As String, personNameStartChar As String) As String
-    ' Meeting attendee names are formatted strangely
-    ' This function parses the attendees and formats them to:
-    ' [[@Bryan Jenks]]
     Dim typeOfNameToClean As Integer
-    
-    ' If attendee is an outside Active Directory individual
-    ' like a gmail account or external person then the display
-    ' is just first and last names. these are perfect to easily format
-    ' ex: `Bryan Jenks`
+
     Dim regexJustFirstNameAndLastName As Object
         Set regexJustFirstNameAndLastName = New RegExp
         regexJustFirstNameAndLastName.Pattern = "^\w+\s\w+$"
     If regexJustFirstNameAndLastName.Test(str) = True Then typeOfNameToClean = 1
     Set regexJustFirstNameAndLastName = Nothing
-    
-    ' This finds emails that are `last name, first name@domain.com`
-    ' not just `.com` will also pick up multiples like
-    ' ex: `@domain.or.gov` etc
+
     Dim regexFirstNameLastNameAndFullDomain As Object
         Set regexFirstNameLastNameAndFullDomain = New RegExp
         regexFirstNameLastNameAndFullDomain.Pattern = "^\w+,\s\w+@\w+(\.\w+)+"
     If regexFirstNameLastNameAndFullDomain.Test(str) = True Then typeOfNameToClean = 2
     Set regexFirstNameLastNameAndFullDomain = Nothing
-    
-    ' A full and normal email only as the invited person
-    ' ex: johndoe@domain.com
+
     Dim regexPlainEmailAddress As Object
         Set regexPlainEmailAddress = New RegExp
         regexPlainEmailAddress.Pattern = "^\w+@\w+\.\w+"
     If regexPlainEmailAddress.Test(str) = True Then typeOfNameToClean = 3
     Set regexPlainEmailAddress = Nothing
-    
-    ' Active Directory people that display like:
-    'ex: `Last Name, First Name (AGENCY)`
+
     Dim regexLastNameFirstNameAndAgency As Object
         Set regexLastNameFirstNameAndAgency = New RegExp
         regexLastNameFirstNameAndAgency.Pattern = "^[a-zA-Z_\-]+,\s[a-zA-Z_\-]+\s\(\w+\)$"
     If regexLastNameFirstNameAndAgency.Test(str) = True Then typeOfNameToClean = 4
     Set regexLastNameFirstNameAndAgency = Nothing
-    
-    ' Single name entity such as a distribution list or 1 word titled entity
-    ' ex: `payroll (Agency)`
+
     Dim regexSingleNameAndDomain As Object
         Set regexSingleNameAndDomain = New RegExp
         regexSingleNameAndDomain.Pattern = "^([a-zA-Z_\-]+\s)+\([a-zA-Z_\-]+\)"
     If regexSingleNameAndDomain.Test(str) = True Then typeOfNameToClean = 5
     Set regexSingleNameAndDomain = Nothing
-    
+
     Select Case typeOfNameToClean
         Case 1 ' John Doe
             formatName = "[[" & personNameStartChar & str & "]]"
@@ -155,7 +103,6 @@ Public Function formatName(str As String, personNameStartChar As String) As Stri
             Dim fName As String, lname As String
             fName = Mid(str, InStr(str, ", ") + 2, InStr(str, "@") - (InStr(str, ", ") + 2))
             lname = Mid(str, 1, InStr(str, ",") - 1)
-            ' Assemble the building blocks and assigning to return value
             formatName = "[[" & personNameStartChar & fName & " " & lname & "]]"
         Case 3 ' JohnDoe@gmail.com
             formatName = "[[" & personNameStartChar & Left(str, InStr(str, "@") - 1) & "]]"
@@ -163,41 +110,29 @@ Public Function formatName(str As String, personNameStartChar As String) As Stri
             Dim fname1 As String, lname1 As String
             fname1 = Mid(str, InStr(str, ", ") + 2, InStr(str, " (") - (InStr(str, ", ") + 2))
             lname1 = Mid(str, 1, InStr(str, ",") - 1)
-            ' Assemble the building blocks and assigning to return value
             formatName = "[[" & personNameStartChar & fname1 & " " & lname1 & "]]"
         Case 5 ' Payroll (Agency)
             formatName = "[[" & Left(str, InStr(str, " (") - 1) & "]]"
-        Case Else ' Anything else
+        Case Else
             formatName = "[[" & str & "]]"
     End Select
-
 End Function
 
 '======================================================================================='
 Public Sub SaveAsUTF8(filePath As String, content As String)
-    ' Late-binding ADODB, no extra references needed
     Dim stm As Object
     Set stm = CreateObject("ADODB.Stream")
-    
-    ' We are writing text
-    stm.Type = 2 'adTypeText
-    ' Set text mode read/write
-    stm.Mode = 3 'adModeReadWrite
-    ' Use UTF-8 to preserve accents and special chars
+    stm.Type = 2
+    stm.Mode = 3
     stm.Charset = "UTF-8"
-    
-    ' Open the stream, write content, save to file
     stm.Open
     stm.WriteText content
-    stm.SaveToFile filePath, 2 ' adSaveCreateOverWrite = 2
+    stm.SaveToFile filePath, 2
     stm.Close
-    
     Set stm = Nothing
-
 End Sub
 
-'============================================
-' HTML ÆÄÀÏÀ» ÀÐ¾î ¹®ÀÚ¿­·Î ¹ÝÈ¯
+'======================================================================================='
 Public Function ReadFileContent(ByVal filePath As String) As String
     Dim fso As Object, f As Object
     Set fso = CreateObject("Scripting.FileSystemObject")
@@ -205,40 +140,212 @@ Public Function ReadFileContent(ByVal filePath As String) As String
         ReadFileContent = ""
         Exit Function
     End If
-    Set f = fso.OpenTextFile(filePath, 1) ' ForReading = 1
+    Set f = fso.OpenTextFile(filePath, 1)
     ReadFileContent = f.ReadAll
     f.Close
 End Function
 
+'======================================================================================='
+' HTML â†’ Markdown conversion
+' Properly handles: source whitespace, headings, bold/italic, images, tables, entities
+Public Function ConvertHTMLToMarkdown(ByVal html As String, ByVal mName As String) As String
+    Dim regEx As Object
+    Set regEx = CreateObject("VBScript.RegExp")
+    regEx.Global = True
+    regEx.IgnoreCase = True
 
-'============================================
-' HTML ³» <img> ÅÂ±×¸¦ Obsidian ÀÌ¹ÌÁö ¸µÅ©·Î º¯È¯ (°æ·Î´Â baseName.files\ »ç¿ë)
-Function ReplaceImageTagsWithMarkdownLinks(ByVal html As String, ByVal baseName As String) As String
+    ' Step 1: Remove noise blocks
+    regEx.Pattern = "<head[\s\S]*?</head>"
+    html = regEx.Replace(html, "")
+    regEx.Pattern = "<style[\s\S]*?</style>"
+    html = regEx.Replace(html, "")
+    regEx.Pattern = "<script[\s\S]*?</script>"
+    html = regEx.Replace(html, "")
+    regEx.Pattern = "<!--[\s\S]*?-->"     ' removes conditional comments and VML comments
+    html = regEx.Replace(html, "")
+    regEx.Pattern = "</?v:[^>]*>"          ' VML tags
+    html = regEx.Replace(html, "")
+
+    ' Step 2: Extract tables â†’ placeholders (before whitespace collapse)
+    Dim tableRegEx As Object
+    Set tableRegEx = CreateObject("VBScript.RegExp")
+    tableRegEx.Pattern = "<table[\s\S]*?</table>"
+    tableRegEx.Global = True
+    tableRegEx.IgnoreCase = True
+
+    Dim tableMatches As Object, tblMatch As Object
+    Dim placeholders() As String, tableMarkdown() As String
+    Dim idx As Long
+    idx = 0
+    Set tableMatches = tableRegEx.Execute(html)
+    For Each tblMatch In tableMatches
+        ReDim Preserve placeholders(idx)
+        ReDim Preserve tableMarkdown(idx)
+        placeholders(idx) = "%%TABLE_" & idx & "%%"
+        tableMarkdown(idx) = ConvertHTMLTableToMarkdown(tblMatch.Value)
+        html = Replace(html, tblMatch.Value, placeholders(idx))
+        idx = idx + 1
+    Next tblMatch
+
+    ' Step 3: Collapse HTML source line breaks to spaces
+    ' (In HTML, raw newlines are just whitespace - only <br>/<p> create visual breaks)
+    regEx.Pattern = "(\r\n|\r|\n)"
+    html = regEx.Replace(html, " ")
+
+    ' Step 4: Replace img tags with Obsidian wikilinks
+    html = ReplaceImageTagsWithMarkdownLinks(html, mName)
+
+    ' Step 4b: Decode &nbsp; early so bold/whitespace cleanup works correctly
+    html = Replace(html, "&nbsp;", " ")
+
+    ' Step 5: Headings
+    regEx.Pattern = "<h[12][^>]*>"
+    html = regEx.Replace(html, vbCrLf & "## ")
+    regEx.Pattern = "<h[34][^>]*>"
+    html = regEx.Replace(html, vbCrLf & "### ")
+    regEx.Pattern = "<h[56][^>]*>"
+    html = regEx.Replace(html, vbCrLf & "#### ")
+    regEx.Pattern = "</h[1-6]>"
+    html = regEx.Replace(html, vbCrLf)
+
+    ' Step 6: Strip bold/italic tags
+    ' Outlook emails have deeply nested <b> tags in headers/signatures that produce
+    ' mismatched ** markers. Plain text is cleaner and more readable for email content.
+    regEx.Pattern = "</?(?:b|strong|i|em)[^>]*>"
+    html = regEx.Replace(html, "")
+
+    ' Step 7: Line breaks and block elements â†’ newlines
+    ' Only closing tags add newlines to avoid double-spacing from open+close pairs
+    regEx.Pattern = "<br\s*/?>"
+    html = regEx.Replace(html, vbCrLf)
+    regEx.Pattern = "<(p|div|li|blockquote|tr)[^>]*>"
+    html = regEx.Replace(html, " ")
+    regEx.Pattern = "</(p|div|li|blockquote|tr)>"
+    html = regEx.Replace(html, vbCrLf)
+
+    ' Step 8: Decode remaining HTML entities (&nbsp; already handled in Step 4b)
+    html = Replace(html, "&amp;", "&")
+    html = Replace(html, "&lt;", "<")
+    html = Replace(html, "&gt;", ">")
+    html = Replace(html, "&quot;", Chr(34))
+    html = Replace(html, "&#39;", "'")
+    html = Replace(html, "&apos;", "'")
+
+    ' Step 8b: Collapse multiple consecutive spaces to single space
+    Do While InStr(html, "  ") > 0
+        html = Replace(html, "  ", " ")
+    Loop
+
+    ' Step 9: Strip all remaining HTML tags
+    regEx.Pattern = "<[^>]+>"
+    html = regEx.Replace(html, "")
+
+    ' Step 9b: Trim leading/trailing whitespace on each line (removes source indentation)
+    Dim lines() As String
+    Dim j As Long
+    If InStr(html, vbCrLf) > 0 Then
+        lines = Split(html, vbCrLf)
+    Else
+        lines = Split(html, vbLf)
+    End If
+    For j = 0 To UBound(lines)
+        lines(j) = Trim(lines(j))
+    Next j
+    html = Join(lines, vbCrLf)
+
+    ' Step 9c: Split reply chain header fields onto separate lines
+    ' ChrW values: ë³´(48372) ë‚¸(45240) ë‚ (45216) ì§œ(51676) ë°›(48155) ëŠ”(45716) ì‚¬(49324) ëžŒ(46988) ì°¸(52280) ì¡°(51312) ì œ(51228) ëª©(47785)
+    Dim replyFields As Variant
+    replyFields = Array(ChrW(48372) & ChrW(45240) & " " & ChrW(45216) & ChrW(51676) & ":", _
+                        ChrW(48155) & ChrW(45716) & " " & ChrW(49324) & ChrW(46988) & ":", _
+                        ChrW(52280) & ChrW(51312) & ":", _
+                        ChrW(51228) & ChrW(47785) & ":")
+    Dim f As Long
+    For f = 0 To UBound(replyFields)
+        html = Replace(html, " " & replyFields(f), vbCrLf & replyFields(f))
+    Next f
+
+    ' Step 9d: Insert --- before signature block (image wikilink after non-image content)
+    Dim sigLines() As String
+    If InStr(html, vbCrLf) > 0 Then
+        sigLines = Split(html, vbCrLf)
+    Else
+        sigLines = Split(html, vbLf)
+    End If
+    Dim sigInserted As Boolean
+    Dim trimLine As String
+    sigInserted = False
+    Dim k As Long
+    Dim prevNonEmpty As String
+    For k = 1 To UBound(sigLines)
+        If Not sigInserted Then
+            trimLine = Trim(sigLines(k))
+            If Left(trimLine, 3) = "![[" Then
+                ' Scan backward to find the last non-empty line
+                Dim m As Long
+                prevNonEmpty = ""
+                For m = k - 1 To 0 Step -1
+                    If Trim(sigLines(m)) <> "" Then
+                        prevNonEmpty = Trim(sigLines(m))
+                        Exit For
+                    End If
+                Next m
+                ' Insert --- only if preceded by actual content (not another image)
+                If prevNonEmpty <> "" And Left(prevNonEmpty, 3) <> "![[" Then
+                    sigLines(k) = "---" & vbCrLf & sigLines(k)
+                    sigInserted = True
+                End If
+            End If
+        End If
+    Next k
+    html = Join(sigLines, vbCrLf)
+
+    ' Step 10: Normalize whitespace â€” collapse 3+ consecutive newlines to 2
+    Do While InStr(html, vbCrLf & vbCrLf & vbCrLf) > 0
+        html = Replace(html, vbCrLf & vbCrLf & vbCrLf, vbCrLf & vbCrLf)
+    Loop
+    Do While InStr(html, vbLf & vbLf & vbLf) > 0
+        html = Replace(html, vbLf & vbLf & vbLf, vbLf & vbLf)
+    Loop
+
+    ' Step 11: Restore table placeholders
+    Dim i As Long
+    For i = 0 To idx - 1
+        html = Replace(html, placeholders(i), vbCrLf & tableMarkdown(i) & vbCrLf)
+    Next i
+
+    ConvertHTMLToMarkdown = Trim(html)
+End Function
+
+'======================================================================================='
+' Replace <img> tags with Obsidian wikilinks pointing to saved .files folder
+Function ReplaceImageTagsWithMarkdownLinks(ByVal html As String, ByVal mName As String) As String
     Dim regEx As Object
     Set regEx = CreateObject("VBScript.RegExp")
     regEx.Global = True
     regEx.IgnoreCase = True
     regEx.Pattern = "<img[^>]*src\s*=\s*[""']([^""']+)[""'][^>]*>"
-    
+
     Dim matches As Object, m As Object
-    Dim result As String, newSrc As String, imgFileName As String
+    Dim result As String, imgFileName As String
     result = html
     Set matches = regEx.Execute(html)
+
     Dim i As Long
     For i = matches.Count - 1 To 0 Step -1
         Set m = matches(i)
-        newSrc = m.SubMatches(0)
-        imgFileName = GetFileNameFromPath(newSrc)
-        newSrc = baseName & ".files\" & imgFileName
+        imgFileName = GetFileNameFromPath(m.SubMatches(0))
+        Dim newSrc As String
+        newSrc = Replace(baseFolder & mName & "\" & mName & ".files\" & imgFileName, "\", "/")
         Dim mdLink As String
-        mdLink = Replace("![[" & baseFolder & newSrc & "]]", "\", "/")
+        mdLink = "![[" & newSrc & "]]"
         result = Left(result, m.FirstIndex) & mdLink & Mid(result, m.FirstIndex + m.Length + 1)
     Next i
+
     ReplaceImageTagsWithMarkdownLinks = result
 End Function
 
-'============================================
-' °æ·Î¿¡¼­ ÆÄÀÏ¸í¸¸ ÃßÃâ (¿¹: "folder/image001.png" ¡æ "image001.png")
+'======================================================================================='
 Function GetFileNameFromPath(ByVal path As String) As String
     Dim pos As Long
     pos = InStrRev(path, "/")
@@ -250,254 +357,65 @@ Function GetFileNameFromPath(ByVal path As String) As String
     End If
 End Function
 
-
-'============================================
-' HTML ¡æ Markdown º¯È¯ (Ç¥¿Í ÀÌ¹ÌÁö¸¦ º°µµ Ã³¸®)
-Public Function ConvertHTMLToMarkdown(ByVal html As String, ByVal baseName As String) As String
-    Dim processedHtml As String
-    ' 1. ºÒÇÊ¿äÇÑ ÅÂ±× Á¦°Å (Á¶°ÇºÎ ÁÖ¼®, VML µî)
-    processedHtml = clearHTML(html)
-    
-    ' 2. ÀÌ¹ÌÁö ÅÂ±× º¯È¯
-    processedHtml = ReplaceImageTagsWithMarkdownLinks(processedHtml, baseName)
-    
-    ' 3. Å×ÀÌºí Ã³¸®: HTML ³»ÀÇ <table> ÅÂ±×º°·Î ºÐ¸®ÇØ¼­ mdÇ¥·Î º¯È¯ÇÑ ÈÄ,
-    '    ÇØ´ç ºÎºÐÀ» placeholder·Î Ä¡È¯ÇÏ°í ³ªÁß¿¡ ´Ù½Ã »ðÀÔ
-    Dim tableRegEx As Object, tableMatches As Object, match As Object
-    Dim placeholders() As String, tableMarkdown() As String
-    Dim idx As Long
-    idx = 0
-    Set tableRegEx = CreateObject("VBScript.RegExp")
-    tableRegEx.Pattern = "<table[\s\S]*?</table>"
-    tableRegEx.Global = True
-    tableRegEx.IgnoreCase = True
-    Set tableMatches = tableRegEx.Execute(processedHtml)
-    
-    For Each match In tableMatches
-        ReDim Preserve placeholders(idx)
-        ReDim Preserve tableMarkdown(idx)
-        placeholders(idx) = "%%TABLE_" & idx & "%%"
-        tableMarkdown(idx) = ConvertHTMLTableToMarkdown(match.Value)
-        processedHtml = Replace(processedHtml, match.Value, placeholders(idx))
-        idx = idx + 1
-    Next match
-    
-    ' 4. ³²Àº HTML ÅÂ±× Á¦°Å
-    processedHtml = StripHtmlTags(processedHtml)
-    
-    ' 5. placeholderµéÀ» mdÇ¥·Î Ä¡È¯
-    Dim i As Long
-    For i = 0 To idx - 1
-        processedHtml = Replace(processedHtml, placeholders(i), vbCrLf & tableMarkdown(i) & vbCrLf)
-    Next i
-    
-    ConvertHTMLToMarkdown = processedHtml
-End Function
-
-'============================================
-' html »çÀü Á¤¸®(¸¶Å©´Ù¿î º¯È¯)
-Public Function clearHTML(ByVal html As String) As String
-    Dim regEx As Object
-    Set regEx = CreateObject("VBScript.RegExp")
-    regEx.Global = True
-    regEx.IgnoreCase = True
-    
-    ' 1. Á¶°ÇºÎ ÁÖ¼® Á¦°Å: <!--[if ...]> ... <![endif]-->
-    regEx.Pattern = "<!--\[if[\s\S]*?<!\[endif\]-->"
-    html = regEx.Replace(html, "")
-    
-    ' 2. VML ÅÂ±× Á¦°Å: <v:...> ÅÂ±×
-    regEx.Pattern = "</?v:[^>]+>"
-    html = regEx.Replace(html, "")
-    
-    ' 3. &nbsp; Á¦°Å (°ø¹éÀ¸·Î Ä¡È¯)
-    regEx.Pattern = "&nbsp;"
-    html = regEx.Replace(html, " ")
-    
-    ' 4. ÅÂ±× ¾ÈÀÇ ¼¼¹ÌÄÝ·Ð(;) Áö¿ì±â
-    Dim tagMatches As Object, tagMatch As Object
-    Dim originalTag As String, newTag As String
-    regEx.Pattern = "<[^>]+>"
-    Set tagMatches = regEx.Execute(html)
-    For Each tagMatch In tagMatches
-        originalTag = tagMatch.Value
-        newTag = Replace(originalTag, ";", "")
-        html = Replace(html, originalTag, newTag)
-    Next tagMatch
-    
-    ' 5. <br> ÅÂ±×¸¦ ÁÙ¹Ù²Þ(vbCrLf)À¸·Î º¯È¯
-    regEx.Pattern = "<br\s*/?>"
-    html = regEx.Replace(html, vbCrLf)
-    
-    ' 6. <p> ÅÂ±×(¿©´Â/´Ý´Â ÅÂ±×)¸¦ ÁÙ¹Ù²ÞÀ¸·Î º¯È¯
-    regEx.Pattern = "</?p\s*[^>]*>"
-    html = regEx.Replace(html, vbCrLf)
-    
-    ' 7. ºÒÇÊ¿äÇÑ ¿£ÅÍ(ÁÙ¹Ù²Þ) Á¤¸®
-    ' 7-1. µÎ °³ ÀÌ»óÀÇ ¿¬¼ÓµÈ ÁÙ¹Ù²ÞÀº ´Ü¶ô ±¸ºÐ¿ë ¸¶Ä¿·Î º¯°æ
-    regEx.Pattern = "(\r\n){2,}"
-    html = regEx.Replace(html, "<<<PARA>>>")
-    ' 7-2. ³²Àº ´ÜÀÏ ÁÙ¹Ù²ÞÀº °ø¹éÀ¸·Î º¯È¯ (Áï, ÇÑ ÁÙ ³» ¿¬°á)
-    regEx.Pattern = "\r\n"
-    html = regEx.Replace(html, " ")
-    ' 7-3. ´Ü¶ô ±¸ºÐ ¸¶Ä¿¸¦ ´Ù½Ã ÁÙ¹Ù²ÞÀ¸·Î º¹¿ø
-    html = Replace(html, "<<<PARA>>>", vbCrLf)
-    
-    ' 8. ¾ÕµÚ °ø¹é Á¦°Å
-    html = Trim(html)
-    
-    clearHTML = html
-End Function
-
-'============================================
-' HTML Å×ÀÌºíÀ» Markdown Ç¥·Î º¯È¯
+'======================================================================================='
+' Convert an HTML <table> to Markdown table syntax
 Public Function ConvertHTMLTableToMarkdown(tblHtml As String) As String
     On Error GoTo ErrorHandler
     Dim md As String
-    Dim htmlDoc As Object, tbl As Object, rows As Object, r As Long, c As Long
-    Dim cellText As String, colCount As Long
-    
+    Dim htmlDoc As Object, tbl As Object, rows As Object
+    Dim r As Long, c As Long, colCount As Long
+    Dim cellText As String
+
     Set htmlDoc = CreateObject("htmlfile")
     htmlDoc.Open
     htmlDoc.Write tblHtml
     htmlDoc.Close
     Set tbl = htmlDoc.getElementsByTagName("table")(0)
     Set rows = tbl.getElementsByTagName("tr")
-    
+
     If rows.Length = 0 Then
         ConvertHTMLTableToMarkdown = ""
         Exit Function
     End If
-    
-    ' Ã¹ ÇàÀ» Çì´õ·Î »ç¿ë (th ¶Ç´Â td)
+
     Dim headerCells As Object
     Set headerCells = rows(0).getElementsByTagName("th")
-    If headerCells.Length = 0 Then
-        Set headerCells = rows(0).getElementsByTagName("td")
-    End If
+    If headerCells.Length = 0 Then Set headerCells = rows(0).getElementsByTagName("td")
     colCount = headerCells.Length
     If colCount = 0 Then
         ConvertHTMLTableToMarkdown = ""
         Exit Function
     End If
-    
+
     md = "|"
     For c = 0 To colCount - 1
-        cellText = CleanText(headerCells(c).innerText)
-        md = md & " " & cellText & " |"
+        md = md & " " & CleanCellText(headerCells(c).innerText) & " |"
     Next c
     md = md & vbCrLf & "|"
     For c = 0 To colCount - 1
         md = md & " --- |"
     Next c
     md = md & vbCrLf
-    
+
     Dim currentCells As Object
     For r = 1 To rows.Length - 1
         Set currentCells = rows(r).getElementsByTagName("td")
-        If currentCells.Length = 0 Then
-            Set currentCells = rows(r).getElementsByTagName("th")
-        End If
+        If currentCells.Length = 0 Then Set currentCells = rows(r).getElementsByTagName("th")
         If currentCells.Length > 0 Then
             md = md & "|"
             For c = 0 To currentCells.Length - 1
-                cellText = CleanText(currentCells(c).innerText)
-                md = md & " " & cellText & " |"
+                md = md & " " & CleanCellText(currentCells(c).innerText) & " |"
             Next c
             md = md & vbCrLf
         End If
     Next r
-    
+
     ConvertHTMLTableToMarkdown = md
     Exit Function
 ErrorHandler:
     ConvertHTMLTableToMarkdown = ""
 End Function
 
-'============================================
-' ¼¿ ÅØ½ºÆ®¿¡¼­ ÁÙ¹Ù²Þ Á¦°Å ¹× ¾ÕµÚ °ø¹é »èÁ¦
-Public Function CleanText(ByVal text As String) As String
-    CleanText = Trim(Replace(text, vbCrLf, " "))
-End Function
-
-'============================================
-' Å×ÀÌºí º¯È¯À» À§ÇÑ ºÒÇÊ¿äÇÑ HTML ÅÂ±× Á¦°Å
-Function StripHtmlTags(ByVal html As String) As String
-    Dim regEx As Object
-    Set regEx = CreateObject("VBScript.RegExp")
-    regEx.Global = True
-    regEx.IgnoreCase = True
-    regEx.Pattern = "<[^>]+>"
-    StripHtmlTags = regEx.Replace(html, "")
-End Function
-
-
-'============================================
-' "º¸³½ »ç¶÷:" ¹®±¸°¡ ³ªÅ¸³ª¸é, ÀÌÈÄ ÃÖ´ë 10ÁÙ ³»¿¡¼­ "Á¦¸ñ:"À» Ã£¾Æ
-' "# È¸½Å ¸ÞÀÏ - [Á¦¸ñ]" Çü½ÄÀ¸·Î Çì´õ »ðÀÔ
-Function InsertReplyHeading(ByVal text As String) As String
-    Dim lines() As String, i As Long, j As Long, subject As String
-    Dim newLines As Collection
-    Set newLines = New Collection
-    
-    ' ÅØ½ºÆ® ÁÙ¹Ù²Þ Ã³¸®
-    If InStr(text, vbCrLf) > 0 Then
-        lines = Split(text, vbCrLf)
-    Else
-        lines = Split(text, vbLf) ' ÀÏºÎ È¯°æ¿¡¼­ vbLf¸¸ Á¸ÀçÇÒ °¡´É¼º Ã³¸®
-    End If
-
-    subject = "" ' ±âº»°ª ÃÊ±âÈ­
-
-    ' µð¹ö±ë ¸Þ½ÃÁö Ãâ·Â
-    ' Debug.Print "----- ½ÃÀÛ -----"
-    
-    For i = 0 To UBound(lines)
-        ' Debug.Print "ÇöÀç ÁÙ(" & i & "): " & lines(i)
-
-        ' "º¸³½ »ç¶÷:" Ã£±â
-        If InStr(LCase(Trim(lines(i))), "º¸³½ »ç¶÷:") > 0 Then
-            ' Debug.Print "¢º 'º¸³½ »ç¶÷:' ¹ß°ß (ÁÙ: " & i & ")"
-
-            ' "º¸³½ »ç¶÷:" ÀÌÈÄ ÃÖ´ë 10ÁÙ ³»¿¡¼­ "Á¦¸ñ:" Ã£±â
-            Dim maxSearchIndex As Long
-            maxSearchIndex = IIf(i + 10 < UBound(lines), i + 10, UBound(lines))
-            
-            For j = i + 1 To maxSearchIndex
-                ' Debug.Print "  - Å½»ö ÁÙ(" & j & "): " & lines(j)
-                
-                If InStr(LCase(Trim(lines(j))), "Á¦¸ñ:") > 0 Then
-                    subject = Trim(Mid(lines(j), InStr(lines(j), "Á¦¸ñ:") + 4)) ' "Á¦¸ñ:" ÀÌÈÄ °ª ÃßÃâ
-                    ' Debug.Print "  ?? 'Á¦¸ñ:' ¹ß°ß ¡æ " & subject
-                    Exit For ' Á¦¸ñ Ã£À¸¸é Á¾·á
-                End If
-            Next j
-
-            ' "Á¦¸ñ:"À» Ã£¾Ò´ÂÁö È®ÀÎ ÈÄ Çì´õ »ðÀÔ
-            If subject <> "" Then
-                newLines.Add "## " & subject
-            Else
-                newLines.Add "## È¸½Å ¸ÞÀÏ"
-            End If
-        End If
-
-        ' ÇöÀç ÁÙ Ãß°¡
-        newLines.Add lines(i)
-    Next i
-
-    ' °á°ú ¹®ÀÚ¿­ ¹ÝÈ¯
-    ' Debug.Print "----- ¿Ï·á -----"
-    InsertReplyHeading = Join(CollectionToArray(newLines), vbCrLf)
-End Function
-
-' CollectionÀ» ¹è¿­·Î º¯È¯ÇÏ´Â ÇÔ¼ö
-Function CollectionToArray(col As Collection) As Variant
-    Dim arr() As String, i As Long
-    ReDim arr(0 To col.Count - 1)
-    
-    For i = 1 To col.Count
-        arr(i - 1) = col(i)
-    Next i
-    
-    CollectionToArray = arr
+Public Function CleanCellText(ByVal text As String) As String
+    CleanCellText = Trim(Replace(Replace(text, vbCrLf, " "), vbLf, " "))
 End Function
