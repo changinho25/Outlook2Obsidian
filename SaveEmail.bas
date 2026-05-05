@@ -20,7 +20,7 @@ Sub ExtractEmail_MarkDown()
 
     Dim obj As Object
     Dim oMail As Outlook.mailItem
-    On Error GoTo EndClean:
+    On Error GoTo ErrHandler:
 
     Dim fileName As String, mName As String
     Dim temporarySubjectLineString As String
@@ -43,12 +43,18 @@ Sub ExtractEmail_MarkDown()
             dtDate = oMail.ReceivedTime
         mName = Format(dtDate, "yyyymmdd", vbUseSystemDayOfWeek, vbUseSystem) & " " & temporarySubjectLineString
 
-        ' Create per-email subfolder inside attachments
+        ' Create per-email subfolder inside attachments (부모 폴더도 없으면 함께 생성)
+        Dim fso As Object
+        Set fso = CreateObject("Scripting.FileSystemObject")
         Dim mailFolder As String
         mailFolder = vaultPathToSaveFileTo & mName & "\"
-        If Not CreateObject("Scripting.FileSystemObject").FolderExists(mailFolder) Then
-            MkDir mailFolder
+        If Not fso.FolderExists(vaultPathToSaveFileTo) Then
+            fso.CreateFolder vaultPathToSaveFileTo
         End If
+        If Not fso.FolderExists(mailFolder) Then
+            fso.CreateFolder mailFolder
+        End If
+        Set fso = Nothing
 
         ' (1) Save HTML (includes inline images in .files subfolder)
         Dim objItem As mailItem, htmlpath As String
@@ -118,6 +124,11 @@ Sub ExtractEmail_MarkDown()
         ShellExecute 0, "open", obsidianURI, vbNullString, vbNullString, 1
 
     Next
+    GoTo EndClean
+ErrHandler:
+    MsgBox "오류 발생 (줄 " & Erl & ")" & vbCrLf & _
+           "오류 번호: " & Err.Number & vbCrLf & _
+           "내용: " & Err.Description, vbCritical, "Outlook2Obsidian"
 EndClean:
     Set obj = Nothing
     Set oMail = Nothing

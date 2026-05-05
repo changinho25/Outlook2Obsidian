@@ -14,7 +14,7 @@ Public Sub config(vaultPathToSaveFileTo As String, personNameStartChar As String
     ' 경로 끝에 반드시 백슬래시(\)를 붙여주세요
     ' ex) ObsidianFolder = "C:\Users\YourName\Obsidian\Notes\Mail\"
     ObsidianFolder = "C:\Users\YourName\Obsidian\Notes\Mail\"
-    baseFolder = "attachments\"
+    baseFolder = "_attachments\"
     vaultPathToSaveFileTo = ObsidianFolder & baseFolder
 
     '================================================'
