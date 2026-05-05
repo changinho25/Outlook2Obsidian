@@ -126,9 +126,9 @@ Sub ExtractEmail_MarkDown()
     Next
     GoTo EndClean
 ErrHandler:
-    MsgBox "오류 발생 (줄 " & Erl & ")" & vbCrLf & _
-           "오류 번호: " & Err.Number & vbCrLf & _
-           "내용: " & Err.Description, vbCritical, "Outlook2Obsidian"
+    MsgBox "Error (Line " & Erl & ")" & vbCrLf & _
+           "Number: " & Err.Number & vbCrLf & _
+           "Description: " & Err.Description, vbCritical, "Outlook2Obsidian"
 EndClean:
     Set obj = Nothing
     Set oMail = Nothing
