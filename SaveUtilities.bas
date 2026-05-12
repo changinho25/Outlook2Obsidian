@@ -221,8 +221,16 @@ Public Function ConvertHTMLToMarkdown(ByVal html As String, ByVal mName As Strin
     ' Step 4: Replace img tags with Obsidian wikilinks
     html = ReplaceImageTagsWithMarkdownLinks(html, mName)
 
-    ' Step 4b: Decode &nbsp; early so bold/whitespace cleanup works correctly
+    ' Step 4b: Normalize non-breaking spaces to regular spaces early so
+    ' bold/whitespace cleanup works correctly. Outlook reply headers use NBSP
+    ' for alignment — without this, they survive the space-collapse step and
+    ' produce wide gaps like "보낸 사람:        신석철".
     html = Replace(html, "&nbsp;", " ")
+    html = Replace(html, "&#160;", " ")
+    html = Replace(html, "&#xa0;", " ")
+    html = Replace(html, "&#xA0;", " ")
+    html = Replace(html, ChrW(160), " ")
+    html = Replace(html, vbTab, " ")
 
     ' Step 5: Headings
     regEx.Pattern = "<h[12][^>]*>"
@@ -282,7 +290,8 @@ Public Function ConvertHTMLToMarkdown(ByVal html As String, ByVal mName As Strin
     ' Step 9c: Split reply chain header fields onto separate lines
     ' ChrW values: 보(48372) 낸(45240) 날(45216) 짜(51676) 받(48155) 는(45716) 사(49324) 람(46988) 참(52280) 조(51312) 제(51228) 목(47785)
     Dim replyFields As Variant
-    replyFields = Array(ChrW(48372) & ChrW(45240) & " " & ChrW(45216) & ChrW(51676) & ":", _
+    replyFields = Array(ChrW(48372) & ChrW(45240) & " " & ChrW(49324) & ChrW(46988) & ":", _
+                        ChrW(48372) & ChrW(45240) & " " & ChrW(45216) & ChrW(51676) & ":", _
                         ChrW(48155) & ChrW(45716) & " " & ChrW(49324) & ChrW(46988) & ":", _
                         ChrW(52280) & ChrW(51312) & ":", _
                         ChrW(51228) & ChrW(47785) & ":")
