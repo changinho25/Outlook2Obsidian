@@ -20,7 +20,10 @@ Sub ExtractEmail_MarkDown()
 
     Dim obj As Object
     Dim oMail As Outlook.mailItem
+    Dim stage As String
+    Dim debugPath As String
     On Error GoTo ErrHandler:
+    stage = "init"
 
     Dim fileName As String, mName As String
     Dim temporarySubjectLineString As String
@@ -44,10 +47,12 @@ Sub ExtractEmail_MarkDown()
         mName = Format(dtDate, "yyyymmdd", vbUseSystemDayOfWeek, vbUseSystem) & " " & temporarySubjectLineString
 
         ' Create per-email subfolder inside attachments (부모 폴더도 없으면 함께 생성)
+        stage = "create folders"
         Dim fso As Object
         Set fso = CreateObject("Scripting.FileSystemObject")
         Dim mailFolder As String
         mailFolder = vaultPathToSaveFileTo & mName & "\"
+        debugPath = mailFolder
         If Not fso.FolderExists(vaultPathToSaveFileTo) Then
             fso.CreateFolder vaultPathToSaveFileTo
         End If
@@ -60,15 +65,19 @@ Sub ExtractEmail_MarkDown()
         Dim objItem As mailItem, htmlpath As String
         Set objItem = Application.ActiveExplorer.Selection(1)
         htmlpath = mailFolder & mName & ".html"
+        debugPath = htmlpath
+        stage = "SaveAs HTML"
         objItem.SaveAs htmlpath, 5
 
         ' (2) Save attachments
+        stage = "save attachments"
         Dim attachments As Outlook.attachments
         Dim Attachment As Outlook.Attachment
         Set attachments = objItem.attachments
         Dim i As Long
         For i = 1 To attachments.Count
             Set Attachment = attachments(i)
+            debugPath = mailFolder & Attachment.fileName
             Attachment.SaveAsFile mailFolder & Attachment.fileName
         Next i
 
@@ -105,9 +114,12 @@ Sub ExtractEmail_MarkDown()
         Next i
 
         ' (6) Convert HTML to Markdown for inline viewing
+        stage = "read HTML"
+        debugPath = htmlpath
         Dim htmlContent As String
         htmlContent = ReadFileContent(htmlpath)
 
+        stage = "convert HTML"
         Dim mdBody As String
         mdBody = ConvertHTMLToMarkdown(htmlContent, mName)
 
@@ -115,10 +127,13 @@ Sub ExtractEmail_MarkDown()
         resultString = resultString & mdBody & vbCrLf
 
         ' Save .md file
+        stage = "save MD"
         fileName = mName & ".md"
+        debugPath = ObsidianFolder & fileName
         SaveAsUTF8 ObsidianFolder & fileName, resultString
 
         ' Open in Obsidian
+        stage = "open obsidian"
         Dim obsidianURI As String
         obsidianURI = "obsidian://open?path=" & UrlEncodeUtf8NoBom(ObsidianFolder & fileName)
         ShellExecute 0, "open", obsidianURI, vbNullString, vbNullString, 1
@@ -126,9 +141,10 @@ Sub ExtractEmail_MarkDown()
     Next
     GoTo EndClean
 ErrHandler:
-    MsgBox "Error (Line " & Erl & ")" & vbCrLf & _
+    MsgBox "Error at [" & stage & "]" & vbCrLf & _
            "Number: " & Err.Number & vbCrLf & _
-           "Description: " & Err.Description, vbCritical, "Outlook2Obsidian"
+           "Description: " & Err.Description & vbCrLf & _
+           "Path: " & debugPath, vbCritical, "Outlook2Obsidian"
 EndClean:
     Set obj = Nothing
     Set oMail = Nothing

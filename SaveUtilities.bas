@@ -134,15 +134,41 @@ End Sub
 
 '======================================================================================='
 Public Function ReadFileContent(ByVal filePath As String) As String
-    Dim fso As Object, f As Object
+    Dim stage As String
+    On Error GoTo ReadErr
+
+    stage = "FSO check"
+    Dim fso As Object
     Set fso = CreateObject("Scripting.FileSystemObject")
     If Not fso.FileExists(filePath) Then
         ReadFileContent = ""
         Exit Function
     End If
-    Set f = fso.OpenTextFile(filePath, 1)
-    ReadFileContent = f.ReadAll
-    f.Close
+    Set fso = Nothing
+
+    stage = "Stream open"
+    Dim stm As Object
+    Set stm = CreateObject("ADODB.Stream")
+    stm.Type = 1
+    stm.Open
+
+    stage = "LoadFromFile"
+    stm.LoadFromFile filePath
+
+    stage = "ReadText"
+    stm.Position = 0
+    stm.Type = 2
+    ' Auto-detect encoding (UTF-8 with BOM, UTF-16, or system default).
+    ' Outlook may save HTML in different encodings depending on content.
+    stm.Charset = "_autodetect_all"
+    ReadFileContent = stm.ReadText
+    stm.Close
+    Set stm = Nothing
+    Exit Function
+
+ReadErr:
+    Err.Raise Err.Number, "ReadFileContent", _
+        "[" & stage & "] " & Err.Description & " | path=" & filePath
 End Function
 
 '======================================================================================='
