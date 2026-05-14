@@ -134,6 +134,12 @@ End Sub
 
 '======================================================================================='
 Public Function ReadFileContent(ByVal filePath As String) As String
+    ' Detect encoding explicitly:
+    '   1) BOM (UTF-8 EF BB BF / UTF-16 LE FF FE / UTF-16 BE FE FF)
+    '   2) <meta charset="..."> or <meta http-equiv content="...; charset=...">
+    '   3) Default to UTF-8 (Outlook's typical save format)
+    ' ADODB's "_autodetect_all" can mis-guess BOM-less UTF-8 as CP949,
+    ' which re-introduces the Korean mojibake bug for some mails.
     Dim stage As String
     On Error GoTo ReadErr
 
@@ -146,21 +152,65 @@ Public Function ReadFileContent(ByVal filePath As String) As String
     End If
     Set fso = Nothing
 
-    stage = "Stream open"
+    stage = "Stream open (binary)"
     Dim stm As Object
     Set stm = CreateObject("ADODB.Stream")
     stm.Type = 1
     stm.Open
-
-    stage = "LoadFromFile"
     stm.LoadFromFile filePath
 
-    stage = "ReadText"
+    stage = "BOM probe"
+    Dim bomBytes() As Byte
+    bomBytes = stm.Read(4)
+    Dim charset As String
+    charset = ""
+    If UBound(bomBytes) >= 2 Then
+        If bomBytes(0) = &HEF And bomBytes(1) = &HBB And bomBytes(2) = &HBF Then
+            charset = "UTF-8"
+        ElseIf bomBytes(0) = &HFF And bomBytes(1) = &HFE Then
+            charset = "UTF-16LE"
+        ElseIf bomBytes(0) = &HFE And bomBytes(1) = &HFF Then
+            charset = "UTF-16BE"
+        End If
+    End If
+
+    ' If no BOM, sniff first 4 KB as ASCII for <meta charset="...">
+    If charset = "" Then
+        stage = "meta charset sniff"
+        stm.Position = 0
+        Dim sniffBytes() As Byte
+        Dim sniffLen As Long
+        sniffLen = stm.Size
+        If sniffLen > 4096 Then sniffLen = 4096
+        sniffBytes = stm.Read(sniffLen)
+        Dim sniffStr As String
+        Dim k As Long
+        For k = LBound(sniffBytes) To UBound(sniffBytes)
+            ' Only ASCII bytes matter for charset declaration
+            If sniffBytes(k) > 0 And sniffBytes(k) < 128 Then
+                sniffStr = sniffStr & Chr(sniffBytes(k))
+            Else
+                sniffStr = sniffStr & " "
+            End If
+        Next k
+
+        Dim reCharset As Object
+        Set reCharset = CreateObject("VBScript.RegExp")
+        reCharset.IgnoreCase = True
+        reCharset.Pattern = "charset\s*=\s*[""']?\s*([A-Za-z0-9_\-]+)"
+        Dim mc As Object
+        Set mc = reCharset.Execute(sniffStr)
+        If mc.Count > 0 Then
+            charset = mc(0).SubMatches(0)
+        End If
+    End If
+
+    If charset = "" Then charset = "UTF-8"   ' Outlook default
+
+    stage = "ReadText (" & charset & ")"
     stm.Position = 0
     stm.Type = 2
-    ' Auto-detect encoding (UTF-8 with BOM, UTF-16, or system default).
-    ' Outlook may save HTML in different encodings depending on content.
-    stm.Charset = "_autodetect_all"
+    stm.Charset = charset
     ReadFileContent = stm.ReadText
     stm.Close
     Set stm = Nothing
