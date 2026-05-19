@@ -10,10 +10,15 @@ Public Sub config(vaultPathToSaveFileTo As String, personNameStartChar As String
     '================================================'
     '====DECLARE=YOUR=FILE=PATH=TO=SAVE=FILES=TO====='
     '================================================'
-    ' 파일을 저장할 Obsidian vault 경로를 입력하세요
-    ' 경로 끝에 반드시 백슬래시(\)를 붙여주세요
-    ' ex) ObsidianFolder = "C:\Users\YourName\Obsidian\Notes\Mail\"
-    ObsidianFolder = "C:\Users\YourName\Obsidian\Notes\Mail\"
+    ' 1) Set INSTALL_FOLDER below to the directory where you placed the .bas
+    '    files and vault-path.txt (ASCII path — never contains Korean).
+    ' 2) Edit vault-path.txt (UTF-8) with Notepad. Put the absolute path to
+    '    your Obsidian mail folder on a single line, e.g.:
+    '        D:\GoogleDrive\Obsidian\Notes\Mail\
+    '    Korean characters in the path are fully supported here.
+    Const INSTALL_FOLDER As String = "C:\Outlook2Obsidian\"
+
+    ObsidianFolder = ReadVaultPath(INSTALL_FOLDER & "vault-path.txt")
     baseFolder = "_attachments\"
     vaultPathToSaveFileTo = ObsidianFolder & baseFolder
 

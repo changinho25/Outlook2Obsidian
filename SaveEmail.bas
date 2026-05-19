@@ -46,6 +46,21 @@ Sub ExtractEmail_MarkDown()
             dtDate = oMail.ReceivedTime
         mName = Format(dtDate, "yyyymmdd", vbUseSystemDayOfWeek, vbUseSystem) & " " & temporarySubjectLineString
 
+        ' Collapse consecutive spaces. ConvertHTMLToMarkdown's whitespace-collapse
+        ' step also rewrites image wikilinks containing mName, so any double-space
+        ' in mName would be reduced there while the on-disk folder keeps it —
+        ' breaking image embeds. Normalize here so disk path == wikilink path.
+        Do While InStr(mName, "  ") > 0
+            mName = Replace(mName, "  ", " ")
+        Loop
+
+        ' Windows strips trailing dots/spaces from file & folder names silently.
+        ' If mName ends with "." or " ", the saved path differs from the wikilink
+        ' path, breaking embeds. Trim them here to keep references consistent.
+        Do While Len(mName) > 0 And (Right(mName, 1) = "." Or Right(mName, 1) = " ")
+            mName = Left(mName, Len(mName) - 1)
+        Loop
+
         ' Create per-email subfolder inside attachments (부모 폴더도 없으면 함께 생성)
         stage = "create folders"
         Dim fso As Object

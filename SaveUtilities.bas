@@ -119,6 +119,47 @@ Public Function formatName(str As String, personNameStartChar As String) As Stri
 End Function
 
 '======================================================================================='
+' Reads the Obsidian vault path from an external UTF-8 config file so the .bas
+' files stay ASCII-only (and immune to encoding corruption on import/export).
+'
+' configPath: absolute path to the vault-path.txt file (UTF-8 single line).
+'   - Editable in Notepad
+'   - Trailing backslash auto-added if missing
+Public Function ReadVaultPath(ByVal configPath As String) As String
+    Dim fso As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FileExists(configPath) Then
+        MsgBox "Vault path config file not found." & vbCrLf & vbCrLf & _
+               "Create a UTF-8 text file at the path below with a single line " & _
+               "containing the absolute path to your Obsidian mail folder:" & vbCrLf & _
+               configPath, vbCritical, "Outlook2Obsidian"
+        ReadVaultPath = ""
+        Exit Function
+    End If
+
+    Dim raw As String
+    raw = ReadFileContent(configPath)
+
+    ' Strip UTF-8 BOM character if present (ADODB returns it as U+FEFF)
+    If Len(raw) > 0 Then
+        If AscW(Left(raw, 1)) = -257 Or AscW(Left(raw, 1)) = 65279 Then
+            raw = Mid(raw, 2)
+        End If
+    End If
+
+    ' Drop any trailing newlines and whitespace
+    raw = Replace(raw, vbCrLf, "")
+    raw = Replace(raw, vbLf, "")
+    raw = Replace(raw, vbCr, "")
+    raw = Trim(raw)
+
+    ' Ensure trailing backslash so concatenation works
+    If Len(raw) > 0 And Right(raw, 1) <> "\" Then raw = raw & "\"
+
+    ReadVaultPath = raw
+End Function
+
+'======================================================================================='
 Public Sub SaveAsUTF8(filePath As String, content As String)
     Dim stm As Object
     Set stm = CreateObject("ADODB.Stream")
@@ -174,7 +215,19 @@ Public Function ReadFileContent(ByVal filePath As String) As String
         End If
     End If
 
-    ' If no BOM, sniff first 4 KB as ASCII for <meta charset="...">
+    ' BOM-less UTF-16 detection: HTML always starts with ASCII (e.g. "<!DO" or "<htm").
+    ' UTF-16 LE encodes each ASCII char as <byte 00>, UTF-16 BE as <00 byte>.
+    If charset = "" And UBound(bomBytes) >= 3 Then
+        If bomBytes(0) > 0 And bomBytes(0) < 128 And bomBytes(1) = 0 And _
+           bomBytes(2) > 0 And bomBytes(2) < 128 And bomBytes(3) = 0 Then
+            charset = "UTF-16LE"
+        ElseIf bomBytes(0) = 0 And bomBytes(1) > 0 And bomBytes(1) < 128 And _
+               bomBytes(2) = 0 And bomBytes(3) > 0 And bomBytes(3) < 128 Then
+            charset = "UTF-16BE"
+        End If
+    End If
+
+    ' If still unknown, sniff first 4 KB as ASCII for <meta charset="...">
     If charset = "" Then
         stage = "meta charset sniff"
         stm.Position = 0
@@ -307,10 +360,10 @@ Public Function ConvertHTMLToMarkdown(ByVal html As String, ByVal mName As Strin
     regEx.Pattern = "</(p|div|li|blockquote|tr)>"
     html = regEx.Replace(html, vbCrLf)
 
-    ' Step 8: Decode remaining HTML entities (&nbsp; already handled in Step 4b)
+    ' Step 8: Decode remaining HTML entities (&nbsp; already handled in Step 4b).
+    ' NOTE: &lt; / &gt; are decoded AFTER Step 9's tag strip — otherwise literal
+    ' "<email@domain>" from decoded entities gets eaten by the <[^>]+> regex.
     html = Replace(html, "&amp;", "&")
-    html = Replace(html, "&lt;", "<")
-    html = Replace(html, "&gt;", ">")
     html = Replace(html, "&quot;", Chr(34))
     html = Replace(html, "&#39;", "'")
     html = Replace(html, "&apos;", "'")
@@ -323,6 +376,10 @@ Public Function ConvertHTMLToMarkdown(ByVal html As String, ByVal mName As Strin
     ' Step 9: Strip all remaining HTML tags
     regEx.Pattern = "<[^>]+>"
     html = regEx.Replace(html, "")
+
+    ' Step 9-post: now safe to decode angle-bracket entities (see Step 8 note)
+    html = Replace(html, "&lt;", "<")
+    html = Replace(html, "&gt;", ">")
 
     ' Step 9b: Trim leading/trailing whitespace on each line (removes source indentation)
     Dim lines() As String
@@ -394,10 +451,22 @@ Public Function ConvertHTMLToMarkdown(ByVal html As String, ByVal mName As Strin
     Loop
 
     ' Step 11: Restore table placeholders
+    ' Empty (layout-only) tables collapse to "" so they don't leave blank gaps;
+    ' real tables get newline padding for readability.
     Dim i As Long
     For i = 0 To idx - 1
-        html = Replace(html, placeholders(i), vbCrLf & tableMarkdown(i) & vbCrLf)
+        If Len(tableMarkdown(i)) = 0 Then
+            html = Replace(html, placeholders(i), "")
+        Else
+            html = Replace(html, placeholders(i), vbCrLf & tableMarkdown(i) & vbCrLf)
+        End If
     Next i
+
+    ' Step 12: Final newline collapse (Step 10 ran before table restoration, so
+    ' any blank lines introduced by non-empty table padding are tidied here)
+    Do While InStr(html, vbCrLf & vbCrLf & vbCrLf) > 0
+        html = Replace(html, vbCrLf & vbCrLf & vbCrLf, vbCrLf & vbCrLf)
+    Loop
 
     ConvertHTMLToMarkdown = Trim(html)
 End Function
@@ -468,6 +537,20 @@ Public Function ConvertHTMLTableToMarkdown(tblHtml As String) As String
     If headerCells.Length = 0 Then Set headerCells = rows(0).getElementsByTagName("td")
     colCount = headerCells.Length
     If colCount = 0 Then
+        ConvertHTMLTableToMarkdown = ""
+        Exit Function
+    End If
+
+    ' Skip empty layout-only tables: all header cells blank AND no body rows
+    Dim headerHasContent As Boolean
+    headerHasContent = False
+    For c = 0 To colCount - 1
+        If Len(CleanCellText(headerCells(c).innerText)) > 0 Then
+            headerHasContent = True
+            Exit For
+        End If
+    Next c
+    If Not headerHasContent And rows.Length <= 1 Then
         ConvertHTMLTableToMarkdown = ""
         Exit Function
     End If
