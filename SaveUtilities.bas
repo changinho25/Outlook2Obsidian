@@ -50,6 +50,7 @@ End Function
 
 '======================================================================================='
 Public Sub ReplaceCharsForFileName(temporarySubjectLineString As String, sChr As String)
+    ' Windows-forbidden characters
     temporarySubjectLineString = Replace(temporarySubjectLineString, "/", sChr)
     temporarySubjectLineString = Replace(temporarySubjectLineString, "\", sChr)
     temporarySubjectLineString = Replace(temporarySubjectLineString, ":", sChr)
@@ -58,8 +59,12 @@ Public Sub ReplaceCharsForFileName(temporarySubjectLineString As String, sChr As
     temporarySubjectLineString = Replace(temporarySubjectLineString, "<", sChr)
     temporarySubjectLineString = Replace(temporarySubjectLineString, ">", sChr)
     temporarySubjectLineString = Replace(temporarySubjectLineString, "|", sChr)
+    ' Obsidian wikilink-forbidden: [ ] parse as embed, # as heading anchor,
+    ' ^ as block-ref anchor. Strip so paths resolve correctly in embeds.
     temporarySubjectLineString = Replace(temporarySubjectLineString, "[", sChr)
     temporarySubjectLineString = Replace(temporarySubjectLineString, "]", sChr)
+    temporarySubjectLineString = Replace(temporarySubjectLineString, "#", sChr)
+    temporarySubjectLineString = Replace(temporarySubjectLineString, "^", sChr)
 End Sub
 
 '======================================================================================='
@@ -472,13 +477,22 @@ Public Function ConvertHTMLToMarkdown(ByVal html As String, ByVal mName As Strin
 End Function
 
 '======================================================================================='
-' Replace <img> tags with Obsidian wikilinks pointing to saved .files folder
+' Replace <img> tags with Obsidian wikilinks pointing to saved .files folder.
+' Match "..." and '...' quote pairs separately so an apostrophe inside a
+' double-quoted value (e.g. subject containing "'") doesn't terminate capture.
 Function ReplaceImageTagsWithMarkdownLinks(ByVal html As String, ByVal mName As String) As String
+    html = ReplaceImgQuoted(html, mName, """", "<img[^>]*src\s*=\s*""([^""]+)""[^>]*>")
+    html = ReplaceImgQuoted(html, mName, "'", "<img[^>]*src\s*=\s*'([^']+)'[^>]*>")
+    ReplaceImageTagsWithMarkdownLinks = html
+End Function
+
+Private Function ReplaceImgQuoted(ByVal html As String, ByVal mName As String, _
+                                   ByVal quoteType As String, ByVal pattern As String) As String
     Dim regEx As Object
     Set regEx = CreateObject("VBScript.RegExp")
     regEx.Global = True
     regEx.IgnoreCase = True
-    regEx.Pattern = "<img[^>]*src\s*=\s*[""']([^""']+)[""'][^>]*>"
+    regEx.Pattern = pattern
 
     Dim matches As Object, m As Object
     Dim result As String, imgFileName As String
@@ -496,7 +510,7 @@ Function ReplaceImageTagsWithMarkdownLinks(ByVal html As String, ByVal mName As 
         result = Left(result, m.FirstIndex) & mdLink & Mid(result, m.FirstIndex + m.Length + 1)
     Next i
 
-    ReplaceImageTagsWithMarkdownLinks = result
+    ReplaceImgQuoted = result
 End Function
 
 '======================================================================================='
