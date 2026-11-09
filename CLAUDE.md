@@ -14,6 +14,16 @@
 - `USER_CONFIG.bas` 수정이 필요할 경우 사용자에게 **VBA 에디터에서 직접 수정**하도록 안내할 것
 - `.bas` 파일 내에 한글 문자열 리터럴 사용 금지 (ChrW() 사용)
 
+## 파일 구성과 적용
+
+| 파일 | 역할 |
+|---|---|
+| `SaveEmail.bas` | 메일을 추출·변환하는 메인 로직 |
+| `SaveUtilities.bas` | 메일 처리·변환 유틸리티 |
+| `USER_CONFIG.bas`, `vault-path.txt` | 개인 설정. git 추적 대상이 아니며 `*.example*` 이 견본이다 |
+
+코드 적용은 사용자가 VBA 편집기의 `File` > `Import File` 로 한다. Claude 는 파일 수정과 안내까지만 하며, 동작 확인 절차는 `README.md` 의 사용 방법과 `C:\CC\outlook\CLAUDE.md` 의 매크로 적용 절차를 참고한다.
+
 ## 저장소 정보
 
 - GitHub: https://github.com/changinho25/Outlook2Obsidian
